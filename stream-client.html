@@ -1,5 +1,3 @@
-<!-- This script tag contains the HTML template for your node's properties editor. -->
-<!-- Node-RED uses the 'data-template-name' attribute to link this HTML to your node type. -->
 <script type="text/x-red" data-template-name="stream-client">
   <div class="form-row">
     <label for="node-input-name"><i class="icon-tag"></i> Name</label>
@@ -31,15 +29,10 @@
   </div>
 </script>
 
-<!-- This script tag contains the JavaScript definition for your Node-RED custom node. -->
 <script type="text/javascript">
-  // Register the 'stream-client' node type with Node-RED.
   RED.nodes.registerType('stream-client', {
-    // Define the category where the node will appear in the palette.
     category: 'input',
-    // Set the background color of the node in the editor.
     color: '#a6bbcf',
-    // Define the default properties for the node. These will be saved with the flow.
     defaults: {
       name: { value: '' }, // Node name (string)
       url: { value: '', required: true }, // Stream URL (string, required)
@@ -49,20 +42,14 @@
       reconnectDelay: { value: 5000 }, // Reconnect Delay in milliseconds (number)
       debug: { value: false } // Debug mode (boolean)
     },
-    // Define the number of input ports (0 for an input node).
     inputs: 0,
-    // Define the number of output ports (1 for this node).
     outputs: 1,
-    // Specify the icon for the node. 'font-awesome/fa-plug' uses Font Awesome.
     icon: 'font-awesome/fa-plug',
-    // Define the label that appears on the node in the editor.
     label: function () {
       return this.name || 'stream-client'; // Use the node's name, or 'stream-client' if no name is set.
     },
     // Function called when the node's properties editor is opened.
     oneditprepare: function () {
-      // Node-RED automatically injects the HTML from the 'data-template-name' script tag.
-      // Now that the elements are in the DOM, explicitly set their values.
       $("#node-input-name").val(this.name);
       $("#node-input-url").val(this.url);
       $("#node-input-token").val(this.token);
@@ -71,23 +58,47 @@
       $("#node-input-reconnectDelay").val(this.reconnectDelay);
       // For checkboxes, use .prop('checked', true/false) instead of .val().
       $("#node-input-debug").prop('checked', this.debug);
-
       console.log("Stream-client editor opened and fields populated.");
     },
-    // Function called when the node's properties editor is closed and saved.
-    // Node-RED automatically saves values from inputs with 'node-input-' IDs.
     oneditsave: function() {
         console.log("Stream-client editor saved.");
     },
-    // Function called when the node's properties editor is closed (either saved or cancelled).
     oneditcancel: function() {
         console.log("Stream-client editor cancelled.");
     }
   });
 </script>
 
-<!-- Optional: You can also include help text in a similar script tag. -->
-<!-- <script type="text/x-red" data-help-name="stream-client">
-  <p>This is a custom Node-RED node for connecting to a stream client.</p>
-  <p>Configure the URL, token, and other parameters here.</p>
-</script> -->
+<script type="text/x-red" data-help-name="stream-client">
+  <p>A custom Node-RED node for connecting to a **stream client** (e.g., WebSocket, SSE). It establishes a connection and outputs received messages.</p>
+
+  <h3>Configuration Properties</h3>
+  <dl class="message-properties">
+    <dt>Name <span class="property-type">string</span></dt>
+    <dd>An optional name for the node, displayed on the flow editor.</dd>
+
+    <dt>URL <span class="property-type">string</span></dt>
+    <dd>The **required** URL of the stream endpoint (e.g., <code>ws://localhost:8080/data</code> or <code>http://example.com/events</code>).</dd>
+
+    <dt>Bearer Token <span class="property-type">string</span></dt>
+    <dd>An optional Bearer token to include in the <code>Authorization</code> header for authentication.</dd>
+
+    <dt>Extra Headers (JSON) <span class="property-type">string</span></dt>
+    <dd>Additional HTTP headers to send with the connection, provided as a JSON string (e.g., <code>{"X-Custom-Header": "value"}</code>).</dd>
+
+    <dt>Query Params (key=value&...) <span class="property-type">string</span></dt>
+    <dd>Optional query parameters to append to the URL (e.g., <code>param1=value1&param2=value2</code>).</dd>
+
+    <dt>Reconnect Delay (ms) <span class="property-type">number</span></dt>
+    <dd>The delay in milliseconds before attempting to reconnect if the connection is lost. Default is <code>5000</code> ms.</dd>
+
+    <dt>Debug <span class="property-type">boolean</span></dt>
+    <dd>If checked, enables additional console logging for debugging purposes.</dd>
+  </dl>
+
+  <h3>Outputs</h3>
+  <dl class="message-properties">
+    <dt>payload <span class="property-type">any</span></dt>
+    <dd>The data received from the stream.</dd>
+  </dl>
+</script>
