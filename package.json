@@ -3,7 +3,7 @@
   "version": "0.1.1",
   "description": "A Node-RED node to stream NDJSON over HTTP with auto-reconnect and configurable headers.",
   "dependencies": {
-    "got": "^12.6.0"
+    "got": "^11.8.5"
   },
   "keywords": [
     "node-red",
