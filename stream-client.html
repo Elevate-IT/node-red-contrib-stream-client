@@ -16,9 +16,13 @@
     icon: 'font-awesome/fa-plug',
     label: function () {
       return this.name || 'stream-client';
+    },
+    oneditprepare: function () {
+      // Initialize any logic for when the editor opens, if needed
     }
   });
 </script>
+
 
 <div class="form-row">
   <label for="node-input-name"><i class="icon-tag"></i> Name</label>
