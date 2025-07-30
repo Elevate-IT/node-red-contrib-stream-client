@@ -18,12 +18,27 @@
       return this.name || 'stream-client';
     },
     oneditprepare: function () {
-      // Initialize any logic for when the editor opens, if needed
-      console.log("Stream-client editor opened");
+      // Explicitly set the values of the input fields when the editor opens
+      $("#node-input-name").val(this.name);
+      $("#node-input-url").val(this.url);
+      $("#node-input-token").val(this.token);
+      $("#node-input-headers").val(this.headers);
+      $("#node-input-query").val(this.query);
+      $("#node-input-reconnectDelay").val(this.reconnectDelay);
+      // For checkboxes, use .prop('checked', ...)
+      $("#node-input-debug").prop('checked', this.debug);
+
+      console.log("Stream-client editor opened and fields populated.");
+    },
+    // You might also want to add an oneditsave function to handle saving if you have custom logic
+    oneditsave: function() {
+        // This function is called when the edit dialog is closed and saved.
+        // Node-RED automatically saves the values from inputs with `node-input-` IDs,
+        // but you can add custom logic here if needed.
+        console.log("Stream-client editor saved.");
     }
   });
 </script>
-
 
 <div class="form-row">
   <label for="node-input-name"><i class="icon-tag"></i> Name</label>
