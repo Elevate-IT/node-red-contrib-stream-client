@@ -69,36 +69,56 @@
   });
 </script>
 
+
 <script type="text/x-red" data-help-name="stream-client">
-  <p>A custom Node-RED node for connecting to a **stream client** (e.g., WebSocket, SSE). It establishes a connection and outputs received messages.</p>
+  <p>
+    The <strong>Stream Client</strong> node connects to an HTTP or HTTPS endpoint that emits
+    newline-delimited JSON (NDJSON). It reads the stream line-by-line and sends each parsed line
+    as a separate message.
+  </p>
 
-  <h3>Configuration Properties</h3>
-  <dl class="message-properties">
-    <dt>Name <span class="property-type">string</span></dt>
-    <dd>An optional name for the node, displayed on the flow editor.</dd>
-
-    <dt>URL <span class="property-type">string</span></dt>
-    <dd>The **required** URL of the stream endpoint (e.g., <code>ws://localhost:8080/data</code> or <code>http://example.com/events</code>).</dd>
-
-    <dt>Bearer Token <span class="property-type">string</span></dt>
-    <dd>An optional Bearer token to include in the <code>Authorization</code> header for authentication.</dd>
-
-    <dt>Extra Headers (JSON) <span class="property-type">string</span></dt>
-    <dd>Additional HTTP headers to send with the connection, provided as a JSON string (e.g., <code>{"X-Custom-Header": "value"}</code>).</dd>
-
-    <dt>Query Params (key=value&...) <span class="property-type">string</span></dt>
-    <dd>Optional query parameters to append to the URL (e.g., <code>param1=value1&param2=value2</code>).</dd>
-
-    <dt>Reconnect Delay (ms) <span class="property-type">number</span></dt>
-    <dd>The delay in milliseconds before attempting to reconnect if the connection is lost. Default is <code>5000</code> ms.</dd>
-
-    <dt>Debug <span class="property-type">boolean</span></dt>
-    <dd>If checked, enables additional console logging for debugging purposes.</dd>
-  </dl>
+  <h3>Inputs</h3>
+  <p>This node does not accept any inputs.</p>
 
   <h3>Outputs</h3>
-  <dl class="message-properties">
-    <dt>payload <span class="property-type">any</span></dt>
-    <dd>The data received from the stream.</dd>
+  <p>Sends one message per line received from the NDJSON stream:</p>
+  <pre>{
+  "payload": { ...parsed JSON line... }
+}</pre>
+
+  <h3>Configuration</h3>
+  <dl>
+    <dt><strong>URL</strong> (required)</dt>
+    <dd>The full stream URL (e.g., <code>https://example.com/api/stream</code>).</dd>
+
+    <dt><strong>Bearer Token</strong></dt>
+    <dd>Optional token to send as an <code>Authorization: Bearer &lt;token&gt;</code> header.</dd>
+
+    <dt><strong>Extra Headers (JSON)</strong></dt>
+    <dd>Additional headers to include in the request, as a JSON object (e.g., <code>{"X-Custom": "123"}</code>).</dd>
+
+    <dt><strong>Query Params</strong></dt>
+    <dd>URL query string (e.g., <code>type=event&id=42</code>). These are added to the end of the URL.</dd>
+
+    <dt><strong>Reconnect Delay (ms)</strong></dt>
+    <dd>Time in milliseconds to wait before attempting to reconnect if the stream closes or fails. Default is <code>5000</code>.</dd>
+
+    <dt><strong>Debug</strong></dt>
+    <dd>If enabled, logs connection details and events to the Node-RED log for debugging.</dd>
   </dl>
+
+  <h3>Status</h3>
+  <ul>
+    <li><code>connecting</code> – Attempting to establish connection</li>
+    <li><code>connected</code> – Stream is active and data is being received</li>
+    <li><code>disconnected</code> – Stream ended or closed</li>
+    <li><code>error</code> – Connection error occurred</li>
+  </ul>
+
+  <h3>Use Cases</h3>
+  <ul>
+    <li>Real-time event streams</li>
+    <li>Webhook-style endpoints emitting NDJSON</li>
+    <li>Telemetry or sensor feeds</li>
+  </ul>
 </script>
