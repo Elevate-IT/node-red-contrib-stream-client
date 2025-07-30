@@ -1,43 +1,84 @@
 <script type="text/javascript">
+  // Register the 'stream-client' node type with Node-RED.
   RED.nodes.registerType('stream-client', {
+    // Define the category where the node will appear in the palette.
     category: 'input',
+    // Set the background color of the node in the editor.
     color: '#a6bbcf',
+    // Define the default properties for the node. These will be saved with the flow.
     defaults: {
-      name: { value: '' },
-      url: { value: '', required: true },
-      token: { value: '' },
-      headers: { value: '' },
-      query: { value: '' },
-      reconnectDelay: { value: 5000 },
-      debug: { value: false }
+      name: { value: '' }, // Node name (string)
+      url: { value: '', required: true }, // Stream URL (string, required)
+      token: { value: '' }, // Bearer Token (string)
+      headers: { value: '' }, // Extra Headers (JSON string)
+      query: { value: '' }, // Query Parameters (key=value&... string)
+      reconnectDelay: { value: 5000 }, // Reconnect Delay in milliseconds (number)
+      debug: { value: false } // Debug mode (boolean)
     },
+    // Define the number of input ports (0 for an input node).
     inputs: 0,
+    // Define the number of output ports (1 for this node).
     outputs: 1,
+    // Specify the icon for the node. 'font-awesome/fa-plug' uses Font Awesome.
     icon: 'font-awesome/fa-plug',
+    // Define the label that appears on the node in the editor.
     label: function () {
-      return this.name || 'stream-client';
+      return this.name || 'stream-client'; // Use the node's name, or 'stream-client' if no name is set.
     },
+    // Function called when the node's properties editor is opened.
     oneditprepare: function () {
-      // Explicitly set the values of the input fields when the editor opens
+      // Explicitly set the values of the input fields when the editor opens.
+      // This ensures that existing node configurations are loaded into the form.
       $("#node-input-name").val(this.name);
       $("#node-input-url").val(this.url);
       $("#node-input-token").val(this.token);
       $("#node-input-headers").val(this.headers);
       $("#node-input-query").val(this.query);
       $("#node-input-reconnectDelay").val(this.reconnectDelay);
-      // For checkboxes, use .prop('checked', ...)
+      // For checkboxes, use .prop('checked', true/false) instead of .val().
       $("#node-input-debug").prop('checked', this.debug);
 
       console.log("Stream-client editor opened and fields populated.");
     },
+    // Function called when the node's properties editor is closed and saved.
+    // Node-RED automatically saves values from inputs with 'node-input-' IDs,
+    // but this function can be used for custom save logic or validation.
     oneditsave: function() {
         console.log("Stream-client editor saved.");
     }
   });
 </script>
 
-<!-- Minimal HTML for testing if anything renders -->
+<!-- This section contains the HTML structure for the node's properties editor. -->
+<!-- Each 'form-row' div typically contains a label and an input field. -->
+<!-- The 'id' attributes of the input fields MUST match the property names defined in 'defaults'
+     prefixed with 'node-input-'. For example, 'name' in defaults corresponds to 'node-input-name'. -->
+
 <div class="form-row">
-  <label for="node-input-name"><i class="icon-tag"></i> Name (Test)</label>
-  <input type="text" id="node-input-name-test">
+  <label for="node-input-name"><i class="icon-tag"></i> Name</label>
+  <input type="text" id="node-input-name" placeholder="Optional name for the node">
+</div>
+<div class="form-row">
+  <label for="node-input-url"><i class="fa fa-globe"></i> URL</label>
+  <input type="text" id="node-input-url" placeholder="e.g., ws://localhost:8080/stream" required>
+</div>
+<div class="form-row">
+  <label for="node-input-token"><i class="fa fa-key"></i> Bearer Token</label>
+  <input type="text" id="node-input-token" placeholder="Optional Bearer token for authentication">
+</div>
+<div class="form-row">
+  <label for="node-input-headers"><i class="fa fa-header"></i> Extra Headers (JSON)</label>
+  <input type="text" id="node-input-headers" placeholder='e.g., {"Authorization": "Basic xyz"}'>
+</div>
+<div class="form-row">
+  <label for="node-input-query"><i class="fa fa-question"></i> Query Params (key=value&...)</label>
+  <input type="text" id="node-input-query" placeholder="e.g., param1=value1&param2=value2">
+</div>
+<div class="form-row">
+  <label for="node-input-reconnectDelay"><i class="fa fa-clock-o"></i> Reconnect Delay (ms)</label>
+  <input type="number" id="node-input-reconnectDelay" min="0" placeholder="e.g., 5000">
+</div>
+<div class="form-row">
+  <label for="node-input-debug"><i class="fa fa-bug"></i> Debug</label>
+  <input type="checkbox" id="node-input-debug">
 </div>
