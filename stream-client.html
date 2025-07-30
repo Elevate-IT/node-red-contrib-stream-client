@@ -1,0 +1,50 @@
+<script type="text/javascript">
+  RED.nodes.registerType('stream-client', {
+    category: 'input',
+    color: '#a6bbcf',
+    defaults: {
+      name: { value: '' },
+      url: { value: '', required: true },
+      token: { value: '' },
+      headers: { value: '' },
+      query: { value: '' },
+      reconnectDelay: { value: 5000 },
+      debug: { value: false }
+    },
+    inputs: 0,
+    outputs: 1,
+    icon: 'font-awesome/fa-plug',
+    label: function () {
+      return this.name || 'stream-client';
+    }
+  });
+</script>
+
+<div class="form-row">
+  <label for="node-input-name"><i class="icon-tag"></i> Name</label>
+  <input type="text" id="node-input-name">
+</div>
+<div class="form-row">
+  <label for="node-input-url"><i class="fa fa-globe"></i> URL</label>
+  <input type="text" id="node-input-url">
+</div>
+<div class="form-row">
+  <label for="node-input-token"><i class="fa fa-key"></i> Bearer Token</label>
+  <input type="text" id="node-input-token">
+</div>
+<div class="form-row">
+  <label for="node-input-headers"><i class="fa fa-header"></i> Extra Headers (JSON)</label>
+  <input type="text" id="node-input-headers">
+</div>
+<div class="form-row">
+  <label for="node-input-query"><i class="fa fa-question"></i> Query Params (key=value&...)</label>
+  <input type="text" id="node-input-query">
+</div>
+<div class="form-row">
+  <label for="node-input-reconnectDelay"><i class="fa fa-clock-o"></i> Reconnect Delay (ms)</label>
+  <input type="number" id="node-input-reconnectDelay">
+</div>
+<div class="form-row">
+  <label for="node-input-debug"><i class="fa fa-bug"></i> Debug</label>
+  <input type="checkbox" id="node-input-debug">
+</div>
