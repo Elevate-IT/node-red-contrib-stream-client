@@ -121,8 +121,35 @@ module.exports = function (RED) {
           followRedirect: true // Follow HTTP redirects by default
         });
 
+        // IMMEDIATELY attach error handler for the 'got' stream
+        stream.on('error', (err) => {
+          node.status({ fill: 'red', shape: 'dot', text: 'error' });
+          // Log the error to Node-RED's console/debug sidebar
+          node.error(`Stream error: ${err.message}`, err);
+          if (!stopped) {
+            node.warn(`Stream error encountered. Attempting to reconnect: ${err.message}`);
+            reconnect(); // Attempt to reconnect if not explicitly stopped
+          } else {
+            node.log('Stream error, but node was stopped.');
+            cleanupStream(); // Final cleanup if node was already stopped
+          }
+        });
+
         // Create a readline interface to process data line by line
         rl = readline.createInterface({ input: stream });
+
+        // Add error handler for the readline interface
+        rl.on('error', (err) => {
+            node.status({ fill: 'red', shape: 'dot', text: 'readline error' });
+            node.error(`Readline interface error: ${err.message}`, err);
+            if (!stopped) {
+                node.warn(`Readline error encountered. Attempting to reconnect: ${err.message}`);
+                reconnect(); // Attempt to reconnect
+            } else {
+                node.log('Readline error, but node was stopped.');
+                cleanupStream();
+            }
+        });
 
         // Event listener for each line received from the stream
         rl.on('line', (line) => {
@@ -153,20 +180,6 @@ module.exports = function (RED) {
             reconnect(); // Attempt to reconnect if not explicitly stopped
           } else {
             node.log('Stream ended gracefully, as node was stopped.');
-            cleanupStream(); // Final cleanup if node was already stopped
-          }
-        });
-
-        // Event listener for stream errors (e.g., network issues, connection refused)
-        stream.on('error', (err) => {
-          node.status({ fill: 'red', shape: 'dot', text: 'error' });
-          // Log the error to Node-RED's console/debug sidebar
-          node.error(`Stream error: ${err.message}`, err);
-          if (!stopped) {
-            node.warn(`Stream error encountered. Attempting to reconnect: ${err.message}`);
-            reconnect(); // Attempt to reconnect if not explicitly stopped
-          } else {
-            node.log('Stream error, but node was stopped.');
             cleanupStream(); // Final cleanup if node was already stopped
           }
         });
