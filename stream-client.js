@@ -44,41 +44,48 @@ module.exports = function (RED) {
       const headers = buildHeaders();
 
       node.status({ fill: 'blue', shape: 'ring', text: 'connecting' });
+
       if (config.debug) {
         node.log(`Connecting to ${url}`);
         node.log(`Headers: ${JSON.stringify(headers)}`);
       }
 
-      try {
-        stream = got.stream(url, { headers });
-        rl = readline.createInterface({ input: stream });
+      // Wrap stream setup in setImmediate to catch async exceptions
+      setImmediate(() => {
+        try {
+          stream = got.stream(url, { headers });
 
-        rl.on('line', (line) => {
-          if (!line.trim()) return;
-          try {
-            const data = JSON.parse(line);
-            node.send({ payload: data });
-            node.status({ fill: 'green', shape: 'dot', text: 'connected' });
-          } catch (err) {
-            node.warn(`Invalid JSON line: ${line}`);
-          }
-        });
+          // Handle stream errors early
+          stream.on('error', (err) => {
+            node.status({ fill: 'red', shape: 'dot', text: 'error' });
+            node.error('Stream error: ' + err.message);
+            if (!stopped) reconnect();
+          });
 
-        stream.on('end', () => {
-          node.status({ fill: 'grey', shape: 'ring', text: 'disconnected' });
-          if (!stopped) reconnect();
-        });
+          rl = readline.createInterface({ input: stream });
 
-        stream.on('error', (err) => {
-          node.status({ fill: 'red', shape: 'dot', text: 'error' });
-          node.error('Stream error: ' + err.message);
-          if (!stopped) reconnect();
-        });
+          rl.on('line', (line) => {
+            if (!line.trim()) return;
+            try {
+              const data = JSON.parse(line);
+              node.send({ payload: data });
+              node.status({ fill: 'green', shape: 'dot', text: 'connected' });
+            } catch (err) {
+              node.warn(`Invalid JSON line: ${line}`);
+            }
+          });
 
-      } catch (err) {
-        node.error('Failed to start stream: ' + err.message);
-        reconnect();
-      }
+          stream.on('end', () => {
+            node.status({ fill: 'grey', shape: 'ring', text: 'disconnected' });
+            if (!stopped) reconnect();
+          });
+
+        } catch (err) {
+          node.status({ fill: 'red', shape: 'dot', text: 'failed to connect' });
+          node.error('Failed to start stream: ' + err.message);
+          reconnect();
+        }
+      });
     };
 
     const reconnect = () => {
@@ -92,7 +99,9 @@ module.exports = function (RED) {
     node.on('close', () => {
       stopped = true;
       if (rl) rl.close();
-      if (stream) stream.destroy();
+      if (stream && typeof stream.destroy === 'function') {
+        stream.destroy();
+      }
     });
   }
 
