@@ -1,118 +1,114 @@
-const got = require('got');
-const readline = require('readline');
-
 module.exports = function (RED) {
-  function StreamClientNode(config) {
-    RED.nodes.createNode(this, config);
-    const node = this;
+    const got = require('got');
 
-    let stopped = false;
-    let stream = null;
-    let rl = null;
+    function StreamClientNode(config) {
+        RED.nodes.createNode(this, config);
+        const node = this;
 
-    const buildUrl = () => {
-      let url = config.url.trim();
-      const params = new URLSearchParams(config.query || '');
-      if ([...params].length > 0) {
-        url += (url.includes('?') ? '&' : '?') + params.toString();
-      }
-      return url;
-    };
+        let reconnectTimer = null;
+        let stream = null;
 
-    const buildHeaders = () => {
-      const headers = {};
-      if (config.token) {
-        headers['Authorization'] = `Bearer ${config.token}`;
-      }
-      if (config.headers) {
-        try {
-          const parsed = JSON.parse(config.headers);
-          Object.assign(headers, parsed);
-        } catch (err) {
-          node.warn('Invalid headers JSON');
+        const reconnectDelay = parseInt(config.reconnectDelay) || 5000;
+
+        function updateStatus(color, shape, text) {
+            node.status({ fill: color, shape: shape, text: text });
         }
-      }
-      return headers;
-    };
 
-    const connect = () => {
-      if (stopped) return;
+        function closeStream() {
+            if (stream) {
+                try {
+                    stream.destroy();
+                } catch (err) {
+                    node.warn(`Error closing stream: ${err.message}`);
+                }
+                stream = null;
+            }
+        }
 
-      const url = buildUrl();
-      const headers = buildHeaders();
+        async function connect() {
+            closeStream();
+            if (!config.url || !/^https?:\/\//.test(config.url)) {
+                node.error("No valid URL specified");
+                updateStatus("red", "dot", "no valid URL");
+                return;
+            }
 
-      node.status({ fill: 'blue', shape: 'ring', text: 'connecting' });
-      if (config.debug) {
-        node.log(`Connecting to ${url}`);
-        node.log(`Headers: ${JSON.stringify(headers)}`);
-      }
+            let headers = {};
+            if (config.token) {
+                headers['Authorization'] = `Bearer ${config.token}`;
+            }
+            if (config.headers) {
+                try {
+                    const extraHeaders = JSON.parse(config.headers);
+                    headers = { ...headers, ...extraHeaders };
+                } catch (err) {
+                    node.warn("Invalid JSON in headers");
+                }
+            }
 
-      try {
-        stream = got.stream(url, { headers });
+            let url = config.url;
+            if (config.query) {
+                url += (url.includes('?') ? '&' : '?') + config.query;
+            }
 
-        // Guard against internal ReadError crashes
-        stream.on('request', (req) => {
-          req.on('error', (err) => {
-            node.error('Request error: ' + err.message);
-            safeReconnect();
-          });
+            updateStatus("yellow", "dot", "connecting...");
+
+            try {
+                stream = got.stream(url, {
+                    headers,
+                    timeout: { request: 0 },
+                    retry: { limit: 0 }
+                });
+
+                stream.on('data', (chunk) => {
+                    const lines = chunk.toString().split('\n');
+                    for (const line of lines) {
+                        if (!line.trim()) continue;
+                        try {
+                            const parsed = JSON.parse(line);
+                            node.send({ payload: parsed, _raw: line });
+                        } catch (err) {
+                            if (config.debug) node.warn(`Invalid JSON: ${line}`);
+                        }
+                    }
+                });
+
+                stream.on('response', () => {
+                    updateStatus("green", "dot", "connected");
+                });
+
+                stream.on('error', (err) => {
+                    node.error(`Stream error: ${err.message}`);
+                    updateStatus("red", "dot", "error - reconnecting...");
+                    scheduleReconnect();
+                });
+
+                stream.on('end', () => {
+                    updateStatus("grey", "ring", "stream ended - reconnecting...");
+                    scheduleReconnect();
+                });
+
+            } catch (err) {
+                node.error(`Connection failed: ${err.message}`);
+                updateStatus("red", "dot", "connection failed - reconnecting...");
+                scheduleReconnect();
+            }
+        }
+
+        function scheduleReconnect() {
+            closeStream();
+            if (reconnectTimer) clearTimeout(reconnectTimer);
+            reconnectTimer = setTimeout(connect, reconnectDelay);
+        }
+
+        node.on('close', (done) => {
+            if (reconnectTimer) clearTimeout(reconnectTimer);
+            closeStream();
+            done();
         });
 
-        stream.on('response', (res) => {
-          res.on('error', (err) => {
-            node.error('Response error: ' + err.message);
-            safeReconnect();
-          });
-        });
+        connect();
+    }
 
-        stream.on('error', (err) => {
-          node.status({ fill: 'red', shape: 'dot', text: 'error' });
-          node.error('Stream error: ' + err.message);
-          safeReconnect();
-        });
-
-        rl = readline.createInterface({ input: stream });
-
-        rl.on('line', (line) => {
-          if (!line.trim()) return;
-          try {
-            const data = JSON.parse(line);
-            node.send({ payload: data });
-            node.status({ fill: 'green', shape: 'dot', text: 'connected' });
-          } catch {
-            node.warn(`Invalid JSON line: ${line}`);
-          }
-        });
-
-        stream.on('end', () => {
-          node.status({ fill: 'grey', shape: 'ring', text: 'disconnected' });
-          safeReconnect();
-        });
-
-      } catch (err) {
-        node.status({ fill: 'red', shape: 'dot', text: 'failed to connect' });
-        node.error('Failed to start stream: ' + err.message);
-        safeReconnect();
-      }
-    };
-
-    const safeReconnect = () => {
-      if (stopped) return;
-      const delay = parseInt(config.reconnectDelay || '5000', 10);
-      if (config.debug) node.log(`Reconnecting in ${delay}ms`);
-      setTimeout(connect, delay);
-    };
-
-    node.on('close', () => {
-      stopped = true;
-      if (rl) rl.close();
-      if (stream && typeof stream.destroy === 'function') {
-        stream.destroy();
-      }
-    });
-
-    connect();
-  }
-
-  RED.nodes.registerType('stream-client', StreamClientNode);
+    RED.nodes.registerType("stream-client", StreamClientNode);
 };
