@@ -61,9 +61,9 @@ module.exports = function (RED) {
                         lookup: 30000,
                         connect: 30000,
                         secureConnect: 30000,
-                        socket: 0,
-                        send: 0,
-                        response: 0
+                        socket: undefined,
+                        send: undefined,
+                        response: undefined
                     },
                     retry: { limit: 0 }
                 });
