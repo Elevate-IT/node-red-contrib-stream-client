@@ -50,11 +50,10 @@ module.exports = function (RED) {
       try {
         stream = got.stream(url, {
           headers,
-          timeout: { request: 0, response: 0, send: 0 },
           retry: { limit: 0 }
+          // Removed timeout to avoid 0ms bug
         });
 
-        // Guard against request-level errors
         stream.on('request', (req) => {
           req.on('error', (err) => {
             node.error('Request error: ' + err.message);
@@ -62,7 +61,6 @@ module.exports = function (RED) {
           });
         });
 
-        // Handle HTTP response
         stream.on('response', (res) => {
           if (res.statusCode >= 400) {
             node.error(`Stream HTTP error: ${res.statusCode} ${res.statusMessage}`);
@@ -76,7 +74,6 @@ module.exports = function (RED) {
           });
         });
 
-        // Generic stream error (e.g., ECONNRESET)
         stream.on('error', (err) => {
           node.status({ fill: 'red', shape: 'dot', text: 'error' });
           node.error('Stream error: ' + err.message);
