@@ -9,8 +9,17 @@ module.exports = function (RED) {
     let stopped = false;
     let stream = null;
     let rl = null;
+    let reconnectTimer = null;
+    let reconnecting = false;
 
-    // Build the full stream URL with query params
+    // Catch any unhandled errors inside this node context
+    process.on('uncaughtException', (err) => {
+      if (config.debug) node.warn(`Uncaught exception: ${err.message}`);
+    });
+    process.on('unhandledRejection', (reason) => {
+      if (config.debug) node.warn(`Unhandled rejection: ${reason}`);
+    });
+
     const buildUrl = () => {
       let url = (config.url || '').trim();
       if (!url) {
@@ -24,7 +33,6 @@ module.exports = function (RED) {
       return url;
     };
 
-    // Merge Authorization + custom headers
     const buildHeaders = () => {
       const headers = {};
       if (config.token) {
@@ -43,6 +51,17 @@ module.exports = function (RED) {
       return headers;
     };
 
+    const safeReconnect = () => {
+      if (stopped || reconnecting) return;
+      reconnecting = true;
+      const delay = parseInt(config.reconnectDelay || '5000', 10);
+      if (config.debug) node.log(`Reconnecting in ${delay}ms`);
+      reconnectTimer = setTimeout(() => {
+        reconnecting = false;
+        connect();
+      }, delay);
+    };
+
     const connect = () => {
       if (stopped) return;
 
@@ -50,7 +69,6 @@ module.exports = function (RED) {
       if (!url) return;
 
       const headers = buildHeaders();
-
       node.status({ fill: 'blue', shape: 'ring', text: 'connecting' });
 
       if (config.debug) {
@@ -59,10 +77,8 @@ module.exports = function (RED) {
       }
 
       try {
-        // No timeout - streaming should run indefinitely
-        stream = got.stream(url, { headers });
+        stream = got.stream(url, { headers, retry: { limit: 0 }, timeout: {} });
 
-        // Catch low-level request errors
         stream.on('request', (req) => {
           req.on('error', (err) => {
             node.error('Request error: ' + err.message);
@@ -70,7 +86,6 @@ module.exports = function (RED) {
           });
         });
 
-        // Catch response-level errors
         stream.on('response', (res) => {
           if (res.statusCode >= 400) {
             node.error(`Stream HTTP error: ${res.statusCode} ${res.statusMessage}`);
@@ -81,18 +96,16 @@ module.exports = function (RED) {
           });
         });
 
-        // Catch any stream errors (network drops, etc.)
         stream.on('error', (err) => {
           node.status({ fill: 'red', shape: 'dot', text: 'error' });
           node.error('Stream error: ' + err.message);
           safeReconnect();
         });
 
-        // Read line-by-line JSON messages
         rl = readline.createInterface({ input: stream });
 
         rl.on('line', (line) => {
-          if (!line.trim()) return; // skip empty lines
+          if (!line.trim()) return;
           try {
             const data = JSON.parse(line);
             node.send({ payload: data });
@@ -102,7 +115,6 @@ module.exports = function (RED) {
           }
         });
 
-        // Handle stream end (server closed connection)
         stream.on('end', () => {
           node.status({ fill: 'grey', shape: 'ring', text: 'disconnected' });
           safeReconnect();
@@ -115,15 +127,9 @@ module.exports = function (RED) {
       }
     };
 
-    const safeReconnect = () => {
-      if (stopped) return;
-      const delay = parseInt(config.reconnectDelay || '5000', 10);
-      if (config.debug) node.log(`Reconnecting in ${delay}ms`);
-      setTimeout(connect, delay);
-    };
-
     node.on('close', () => {
       stopped = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
       if (rl) rl.close();
       if (stream && typeof stream.destroy === 'function') {
         stream.destroy();
