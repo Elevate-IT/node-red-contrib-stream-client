@@ -9,23 +9,9 @@ module.exports = function (RED) {
     let stopped = false;
     let stream = null;
     let rl = null;
-    let reconnectTimer = null;
-    let reconnecting = false;
-
-    // Catch any unhandled errors inside this node context
-    process.on('uncaughtException', (err) => {
-      if (config.debug) node.warn(`Uncaught exception: ${err.message}`);
-    });
-    process.on('unhandledRejection', (reason) => {
-      if (config.debug) node.warn(`Unhandled rejection: ${reason}`);
-    });
 
     const buildUrl = () => {
-      let url = (config.url || '').trim();
-      if (!url) {
-        node.error('No URL provided');
-        return null;
-      }
+      let url = config.url.trim();
       const params = new URLSearchParams(config.query || '');
       if ([...params].length > 0) {
         url += (url.includes('?') ? '&' : '?') + params.toString();
@@ -41,44 +27,34 @@ module.exports = function (RED) {
       if (config.headers) {
         try {
           const parsed = JSON.parse(config.headers);
-          if (typeof parsed === 'object' && parsed !== null) {
-            Object.assign(headers, parsed);
-          }
-        } catch {
-          node.warn('Invalid headers JSON - skipping custom headers');
+          Object.assign(headers, parsed);
+        } catch (err) {
+          node.warn('Invalid headers JSON');
         }
       }
       return headers;
-    };
-
-    const safeReconnect = () => {
-      if (stopped || reconnecting) return;
-      reconnecting = true;
-      const delay = parseInt(config.reconnectDelay || '5000', 10);
-      if (config.debug) node.log(`Reconnecting in ${delay}ms`);
-      reconnectTimer = setTimeout(() => {
-        reconnecting = false;
-        connect();
-      }, delay);
     };
 
     const connect = () => {
       if (stopped) return;
 
       const url = buildUrl();
-      if (!url) return;
-
       const headers = buildHeaders();
-      node.status({ fill: 'blue', shape: 'ring', text: 'connecting' });
 
+      node.status({ fill: 'blue', shape: 'ring', text: 'connecting' });
       if (config.debug) {
-        node.log(`Connecting to: ${url}`);
+        node.log(`Connecting to ${url}`);
         node.log(`Headers: ${JSON.stringify(headers)}`);
       }
 
       try {
-        stream = got.stream(url, { headers, retry: { limit: 0 }, timeout: {} });
+        stream = got.stream(url, {
+          headers,
+          timeout: { request: 0, response: 0, send: 0 },
+          retry: { limit: 0 }
+        });
 
+        // Guard against request-level errors
         stream.on('request', (req) => {
           req.on('error', (err) => {
             node.error('Request error: ' + err.message);
@@ -86,9 +62,13 @@ module.exports = function (RED) {
           });
         });
 
+        // Handle HTTP response
         stream.on('response', (res) => {
           if (res.statusCode >= 400) {
             node.error(`Stream HTTP error: ${res.statusCode} ${res.statusMessage}`);
+          } else {
+            node.status({ fill: 'green', shape: 'dot', text: 'connected' });
+            if (config.debug) node.log(`Connected. HTTP ${res.statusCode} ${res.statusMessage}`);
           }
           res.on('error', (err) => {
             node.error('Response error: ' + err.message);
@@ -96,6 +76,7 @@ module.exports = function (RED) {
           });
         });
 
+        // Generic stream error (e.g., ECONNRESET)
         stream.on('error', (err) => {
           node.status({ fill: 'red', shape: 'dot', text: 'error' });
           node.error('Stream error: ' + err.message);
@@ -109,9 +90,8 @@ module.exports = function (RED) {
           try {
             const data = JSON.parse(line);
             node.send({ payload: data });
-            node.status({ fill: 'green', shape: 'dot', text: 'connected' });
           } catch {
-            node.warn(`Invalid JSON from stream: ${line}`);
+            node.warn(`Invalid JSON line: ${line}`);
           }
         });
 
@@ -127,9 +107,15 @@ module.exports = function (RED) {
       }
     };
 
+    const safeReconnect = () => {
+      if (stopped) return;
+      const delay = parseInt(config.reconnectDelay || '5000', 10);
+      if (config.debug) node.log(`Reconnecting in ${delay}ms`);
+      setTimeout(connect, delay);
+    };
+
     node.on('close', () => {
       stopped = true;
-      if (reconnectTimer) clearTimeout(reconnectTimer);
       if (rl) rl.close();
       if (stream && typeof stream.destroy === 'function') {
         stream.destroy();
