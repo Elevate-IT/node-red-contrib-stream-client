@@ -50,10 +50,12 @@ module.exports = function (RED) {
       try {
         stream = got.stream(url, {
           headers,
-          retry: { limit: 0 }
-          // Removed timeout to avoid 0ms bug
+          retry: { limit: 0 },
+          https: { rejectUnauthorized: false }, // prevent TLS proxy issues
+          throwHttpErrors: false                // do not throw on 4xx/5xx
         });
 
+        // --- request-level errors ---
         stream.on('request', (req) => {
           req.on('error', (err) => {
             node.error('Request error: ' + err.message);
@@ -61,6 +63,7 @@ module.exports = function (RED) {
           });
         });
 
+        // --- response-level handling ---
         stream.on('response', (res) => {
           if (res.statusCode >= 400) {
             node.error(`Stream HTTP error: ${res.statusCode} ${res.statusMessage}`);
@@ -68,18 +71,21 @@ module.exports = function (RED) {
             node.status({ fill: 'green', shape: 'dot', text: 'connected' });
             if (config.debug) node.log(`Connected. HTTP ${res.statusCode} ${res.statusMessage}`);
           }
+
           res.on('error', (err) => {
             node.error('Response error: ' + err.message);
             safeReconnect();
           });
         });
 
+        // --- stream errors (including ReadError, ECONNRESET, abort) ---
         stream.on('error', (err) => {
           node.status({ fill: 'red', shape: 'dot', text: 'error' });
           node.error('Stream error: ' + err.message);
           safeReconnect();
         });
 
+        // --- line reader ---
         rl = readline.createInterface({ input: stream });
 
         rl.on('line', (line) => {
@@ -92,8 +98,20 @@ module.exports = function (RED) {
           }
         });
 
+        rl.on('error', (err) => {
+          node.error('Readline error: ' + err.message);
+          safeReconnect();
+        });
+
+        rl.on('close', () => {
+          if (!stopped) {
+            node.status({ fill: 'grey', shape: 'ring', text: 'disconnected' });
+            safeReconnect();
+          }
+        });
+
         stream.on('end', () => {
-          node.status({ fill: 'grey', shape: 'ring', text: 'disconnected' });
+          node.status({ fill: 'grey', shape: 'ring', text: 'ended' });
           safeReconnect();
         });
 
