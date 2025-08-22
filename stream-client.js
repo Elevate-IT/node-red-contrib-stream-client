@@ -1,144 +1,114 @@
-const got = require('got');
-const readline = require('readline');
+const got = require("got");
 
 module.exports = function (RED) {
   function StreamClientNode(config) {
     RED.nodes.createNode(this, config);
     const node = this;
 
-    let stopped = false;
     let stream = null;
-    let rl = null;
+    let reconnectTimer = null;
+    let reconnectDelay = 5000; // start at 5s
+    const maxDelay = 60000;    // cap at 60s
 
-    const buildUrl = () => {
-      let url = config.url.trim();
-      const params = new URLSearchParams(config.query || '');
-      if ([...params].length > 0) {
-        url += (url.includes('?') ? '&' : '?') + params.toString();
+    function safeReconnect() {
+      if (reconnectTimer) return;
+      node.status({ fill: "yellow", shape: "dot", text: `reconnecting in ${reconnectDelay / 1000}s` });
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        startStream();
+      }, reconnectDelay);
+
+      // exponential backoff
+      reconnectDelay = Math.min(reconnectDelay * 2, maxDelay);
+    }
+
+    function resetBackoff() {
+      reconnectDelay = 5000; // reset on success
+    }
+
+    function startStream() {
+      if (stream) {
+        stream.destroy();
+        stream = null;
       }
-      return url;
-    };
 
-    const buildHeaders = () => {
+      const url = config.url;
       const headers = {};
+
       if (config.token) {
-        headers['Authorization'] = `Bearer ${config.token}`;
+        headers["Authorization"] = `Bearer ${config.token}`;
       }
-      if (config.headers) {
-        try {
-          const parsed = JSON.parse(config.headers);
-          Object.assign(headers, parsed);
-        } catch (err) {
-          node.warn('Invalid headers JSON');
-        }
-      }
-      return headers;
-    };
 
-    const connect = () => {
-      if (stopped) return;
-
-      const url = buildUrl();
-      const headers = buildHeaders();
-
-      node.status({ fill: 'blue', shape: 'ring', text: 'connecting' });
-      if (config.debug) {
-        node.log(`Connecting to ${url}`);
-        node.log(`Headers: ${JSON.stringify(headers)}`);
-      }
+      node.status({ fill: "blue", shape: "dot", text: "connecting" });
 
       try {
         stream = got.stream(url, {
           headers,
           retry: { limit: 0 },
-          https: { rejectUnauthorized: false }, // prevent TLS proxy issues
-          throwHttpErrors: false                // do not throw on 4xx/5xx
+          https: { rejectUnauthorized: false }, // allow self-signed if needed
+          throwHttpErrors: false,               // don't throw for 4xx/5xx
+          timeout: { request: 30000 },          // 30s request timeout
+          hooks: {
+            beforeError: [
+              (error) => {
+                // Downgrade got’s HTTPError so it won’t crash Node-RED
+                if (error.name === "HTTPError") {
+                  error.name = "NonFatalHTTPError";
+                }
+                return error;
+              },
+            ],
+          },
         });
 
-        // --- request-level errors ---
-        stream.on('request', (req) => {
-          req.on('error', (err) => {
-            node.error('Request error: ' + err.message);
-            safeReconnect();
-          });
-        });
-
-        // --- response-level handling ---
-        stream.on('response', (res) => {
-          if (res.statusCode >= 400) {
-            node.error(`Stream HTTP error: ${res.statusCode} ${res.statusMessage}`);
+        stream.on("response", (response) => {
+          if (response.statusCode >= 200 && response.statusCode < 300) {
+            node.status({ fill: "green", shape: "dot", text: "connected" });
+            resetBackoff();
           } else {
-            node.status({ fill: 'green', shape: 'dot', text: 'connected' });
-            if (config.debug) node.log(`Connected. HTTP ${res.statusCode} ${res.statusMessage}`);
-          }
-
-          res.on('error', (err) => {
-            node.error('Response error: ' + err.message);
+            node.status({ fill: "red", shape: "ring", text: `HTTP ${response.statusCode}` });
+            node.error(`Stream error: HTTP ${response.statusCode}`);
             safeReconnect();
-          });
+          }
         });
 
-        // --- stream errors (including ReadError, ECONNRESET, abort) ---
-        stream.on('error', (err) => {
-          node.status({ fill: 'red', shape: 'dot', text: 'error' });
-          node.error('Stream error: ' + err.message);
-          safeReconnect();
-        });
-
-        // --- line reader ---
-        rl = readline.createInterface({ input: stream });
-
-        rl.on('line', (line) => {
-          if (!line.trim()) return;
-          try {
-            const data = JSON.parse(line);
+        stream.on("data", (chunk) => {
+          const data = chunk.toString().trim();
+          if (data) {
             node.send({ payload: data });
-          } catch {
-            node.warn(`Invalid JSON line: ${line}`);
           }
         });
 
-        rl.on('error', (err) => {
-          node.error('Readline error: ' + err.message);
+        stream.on("error", (err) => {
+          node.status({ fill: "red", shape: "dot", text: "error" });
+          node.error(`Stream error: ${err.name} - ${err.message}`);
           safeReconnect();
         });
 
-        rl.on('close', () => {
-          if (!stopped) {
-            node.status({ fill: 'grey', shape: 'ring', text: 'disconnected' });
-            safeReconnect();
-          }
-        });
-
-        stream.on('end', () => {
-          node.status({ fill: 'grey', shape: 'ring', text: 'ended' });
+        stream.on("end", () => {
+          node.status({ fill: "yellow", shape: "ring", text: "disconnected" });
           safeReconnect();
         });
-
       } catch (err) {
-        node.status({ fill: 'red', shape: 'dot', text: 'failed to connect' });
-        node.error('Failed to start stream: ' + err.message);
+        node.status({ fill: "red", shape: "dot", text: "exception" });
+        node.error(`Exception in startStream: ${err.message}`);
         safeReconnect();
       }
-    };
+    }
 
-    const safeReconnect = () => {
-      if (stopped) return;
-      const delay = parseInt(config.reconnectDelay || '5000', 10);
-      if (config.debug) node.log(`Reconnecting in ${delay}ms`);
-      setTimeout(connect, delay);
-    };
+    startStream();
 
-    node.on('close', () => {
-      stopped = true;
-      if (rl) rl.close();
-      if (stream && typeof stream.destroy === 'function') {
+    node.on("close", () => {
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
+      if (stream) {
         stream.destroy();
+        stream = null;
       }
     });
-
-    connect();
   }
 
-  RED.nodes.registerType('stream-client', StreamClientNode);
+  RED.nodes.registerType("stream-client", StreamClientNode);
 };
