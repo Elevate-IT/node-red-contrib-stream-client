@@ -5,108 +5,42 @@ module.exports = function (RED) {
     RED.nodes.createNode(this, config);
     const node = this;
 
-    let stream = null;
-    let reconnectTimer = null;
-    let reconnectDelay = 5000; // start at 5s
-    const maxDelay = 60000;    // cap at 60s
+    let retryDelay = 1000; // start at 1s
+    let reconnectTimer;
 
-    function safeReconnect() {
-      if (reconnectTimer) return;
-      node.status({ fill: "yellow", shape: "dot", text: `reconnecting in ${reconnectDelay / 1000}s` });
-      reconnectTimer = setTimeout(() => {
-        reconnectTimer = null;
-        startStream();
-      }, reconnectDelay);
+    const url = config.url;
+    const headers = {
+      Authorization: `Bearer ${config.token}`,
+      "Content-Type": "application/json",
+    };
 
-      // exponential backoff
-      reconnectDelay = Math.min(reconnectDelay * 2, maxDelay);
-    }
-
-    function resetBackoff() {
-      reconnectDelay = 5000; // reset on success
-    }
-
-    function startStream() {
-      if (stream) {
-        stream.destroy();
-        stream = null;
-      }
-
-      const url = config.url;
-      const headers = {};
-
-      if (config.token) {
-        headers["Authorization"] = `Bearer ${config.token}`;
-      }
-
-      node.status({ fill: "blue", shape: "dot", text: "connecting" });
-
+    async function connect() {
       try {
-        stream = got.stream(url, {
+        const response = await got(url, {
           headers,
-          retry: { limit: 0 },
-          https: { rejectUnauthorized: false }, // allow self-signed if needed
-          throwHttpErrors: false,               // don't throw for 4xx/5xx
-          timeout: { request: 30000 },          // 30s request timeout
-          hooks: {
-            beforeError: [
-              (error) => {
-                // Downgrade got’s HTTPError so it won’t crash Node-RED
-                if (error.name === "HTTPError") {
-                  error.name = "NonFatalHTTPError";
-                }
-                return error;
-              },
-            ],
-          },
-        });
+          timeout: { request: 60000 }, // allow slow server responses
+        }).json();
 
-        stream.on("response", (response) => {
-          if (response.statusCode >= 200 && response.statusCode < 300) {
-            node.status({ fill: "green", shape: "dot", text: "connected" });
-            resetBackoff();
-          } else {
-            node.status({ fill: "red", shape: "ring", text: `HTTP ${response.statusCode}` });
-            node.error(`Stream error: HTTP ${response.statusCode}`);
-            safeReconnect();
-          }
-        });
+        // Send parsed JSON payload
+        node.send({ payload: response });
 
-        stream.on("data", (chunk) => {
-          const data = chunk.toString().trim();
-          if (data) {
-            node.send({ payload: data });
-          }
-        });
+        // Reset backoff on success
+        retryDelay = 1000;
+        reconnectTimer = setTimeout(connect, retryDelay);
 
-        stream.on("error", (err) => {
-          node.status({ fill: "red", shape: "dot", text: "error" });
-          node.error(`Stream error: ${err.name} - ${err.message}`);
-          safeReconnect();
-        });
+      } catch (error) {
+        node.error("Stream error: " + error.message);
 
-        stream.on("end", () => {
-          node.status({ fill: "yellow", shape: "ring", text: "disconnected" });
-          safeReconnect();
-        });
-      } catch (err) {
-        node.status({ fill: "red", shape: "dot", text: "exception" });
-        node.error(`Exception in startStream: ${err.message}`);
-        safeReconnect();
+        // Exponential backoff up to 60s
+        retryDelay = Math.min(retryDelay * 2, 60000);
+        reconnectTimer = setTimeout(connect, retryDelay);
       }
     }
 
-    startStream();
+    connect();
 
-    node.on("close", () => {
-      if (reconnectTimer) {
-        clearTimeout(reconnectTimer);
-        reconnectTimer = null;
-      }
-      if (stream) {
-        stream.destroy();
-        stream = null;
-      }
+    node.on("close", function () {
+      if (reconnectTimer) clearTimeout(reconnectTimer);
     });
   }
 
