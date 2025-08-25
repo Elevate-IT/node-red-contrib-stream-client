@@ -18,18 +18,18 @@ module.exports = function (RED) {
       try {
         const response = await got(url, {
           headers,
-          timeout: { request: 60000 }, // allow slow server responses
+          timeout: { request: 60000 },
         }).json();
 
-        // Send parsed JSON payload
         node.send({ payload: response });
 
-        // Reset backoff on success
+        // Reset backoff
         retryDelay = 1000;
         reconnectTimer = setTimeout(connect, retryDelay);
 
-      } catch (error) {
-        node.error("Stream error: " + error.message);
+      } catch (err) {
+        // Catch ALL errors, including ReadError / AbortError
+        node.error("Stream error: " + (err.name || "") + " - " + err.message);
 
         // Exponential backoff up to 60s
         retryDelay = Math.min(retryDelay * 2, 60000);
